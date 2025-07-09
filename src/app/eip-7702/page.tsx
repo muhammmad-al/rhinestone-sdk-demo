@@ -99,6 +99,7 @@ export default function Home() {
   const [delegationLoading, setDelegationLoading] = useState(false);
   const [userOpLoading, setUserOpLoading] = useState(false);
   const [count, setCount] = useState<number>(0);
+  const [lastTxHash, setLastTxHash] = useState<string>("");
 
   useEffect(() => {
     const localAccount = localStorage.getItem("7702-account") || "";
@@ -278,6 +279,11 @@ export default function Home() {
       hash: userOpHash,
     });
     console.log("UserOp receipt: ", receipt);
+    
+    // Extract and store the transaction hash
+    if (receipt.receipt && receipt.receipt.transactionHash) {
+      setLastTxHash(receipt.receipt.transactionHash);
+    }
 
     setCount(
       await getCount({
@@ -412,6 +418,18 @@ export default function Home() {
           <div>
             {account && <>Account {!accountIsDelegated && "not"} delegated</>}
           </div>
+          {lastTxHash && (
+            <div>
+              <div>Transaction Hash: <a 
+                href={`https://sepolia.etherscan.io/tx/${lastTxHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                {lastTxHash}
+              </a></div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-4 items-center flex-col sm:flex-row">
