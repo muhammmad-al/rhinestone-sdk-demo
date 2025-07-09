@@ -96,7 +96,6 @@ export default function Home() {
   >();
   const [accountIsDelegated, setAccountIsDelegated] = useState(false);
 
-  const [delegationLoading, setDelegationLoading] = useState(false);
   const [userOpLoading, setUserOpLoading] = useState(false);
   const [count, setCount] = useState<number>(0);
   const [lastTxHash, setLastTxHash] = useState<string>("");
@@ -113,186 +112,218 @@ export default function Home() {
     }
   }, []);
 
-  const handleCreateAccount = useCallback(async () => {
-    const accountKey = generatePrivateKey();
-    const _account = privateKeyToAccount(accountKey);
-    setAccount(_account);
-    localStorage.setItem("7702-account", accountKey);
 
-    // note: currently the safe doesnt allow address(this) to be an owner
-    const ownerKey = generatePrivateKey();
-    const _safeOwner = privateKeyToAccount(ownerKey);
-    setSafeOwner(_safeOwner);
-    localStorage.setItem("7702-owner", ownerKey);
-
-    setAccountIsDelegated(false);
-
-    if (
-      await publicClient?.getCode({
-        address: _account.address,
-      })
-    ) {
-      setAccountIsDelegated(true);
-    }
-  }, [publicClient]);
-
-  const handleDelegateAccount = useCallback(async () => {
-    if (!account) {
-      console.error("No account");
-      return;
-    } else if (!safeOwner) {
-      console.error("No safe owner");
-      return;
-    } else if (!publicClient) {
-      console.error("No public client");
-      return;
-    }
-
-    setDelegationLoading(true);
-
-    const smartSessions = getSmartSessionsValidator({
-      sessions: [session],
-    });
-
-    const sponsorAccount = privateKeyToAccount(
-      process.env.NEXT_PUBLIC_SPONSOR_PK! as Hex,
-    );
-
-    const authorization = await signAuthorization(publicClient, {
-      account: account,
-      contractAddress: "0x29fcB43b46531BcA003ddC8FCB67FFE91900C762",
-      executor: sponsorAccount,
-    });
-
-    const txHash = await writeContract(publicClient, {
-      address: account.address,
-      abi: parseAbi([
-        "function setup(address[] calldata _owners,uint256 _threshold,address to,bytes calldata data,address fallbackHandler,address paymentToken,uint256 payment, address paymentReceiver) external",
-      ]),
-      functionName: "setup",
-      args: [
-        [safeOwner.address],
-        BigInt(1),
-        "0x7579011aB74c46090561ea277Ba79D510c6C00ff",
-        encodeFunctionData({
-          abi: parseAbi([
-            "struct ModuleInit {address module;bytes initData;}",
-            "function addSafe7579(address safe7579,ModuleInit[] calldata validators,ModuleInit[] calldata executors,ModuleInit[] calldata fallbacks, ModuleInit[] calldata hooks,address[] calldata attesters,uint8 threshold) external",
-          ]),
-          functionName: "addSafe7579",
-          args: [
-            "0x7579EE8307284F293B1927136486880611F20002",
-            [
-              {
-                module: smartSessions.address,
-                initData: smartSessions.initData,
-              },
-            ],
-            [],
-            [],
-            [],
-            [
-              RHINESTONE_ATTESTER_ADDRESS, // Rhinestone Attester
-              MOCK_ATTESTER_ADDRESS, // Mock Attester - do not use in production
-            ],
-            1,
-          ],
-        }),
-        "0x7579EE8307284F293B1927136486880611F20002",
-        zeroAddress,
-        BigInt(0),
-        zeroAddress,
-      ],
-      account: sponsorAccount,
-      authorizationList: [authorization],
-    });
-
-    await publicClient.waitForTransactionReceipt({
-      hash: txHash,
-    });
-
-    getSmartAccountClient();
-    getDelegationState();
-
-    setDelegationLoading(false);
-  }, [account, publicClient, safeOwner]);
 
   const handleSendUserOp = useCallback(async () => {
-    if (!smartAccountClient) {
-      console.error("No smart account client");
-      return;
-    } else if (!publicClient) {
+    if (!publicClient) {
       console.error("No public client");
       return;
     }
 
     setUserOpLoading(true);
 
-    const nonce = await getAccountNonce(publicClient, {
-      address: smartAccountClient.account.address,
-      entryPointAddress: entryPoint07Address,
-      key: encodeValidatorNonce({
-        account: getAccount({
-          address: smartAccountClient.account.address,
-          type: "safe",
+    try {
+      // Step 1: Create EOA if not exists
+      let _account = account;
+      let _safeOwner = safeOwner;
+      
+      if (!_account) {
+        const accountKey = generatePrivateKey();
+        _account = privateKeyToAccount(accountKey);
+        setAccount(_account);
+        localStorage.setItem("7702-account", accountKey);
+      }
+
+      if (!_safeOwner) {
+        const ownerKey = generatePrivateKey();
+        _safeOwner = privateKeyToAccount(ownerKey);
+        setSafeOwner(_safeOwner);
+        localStorage.setItem("7702-owner", ownerKey);
+      }
+
+      // Step 2: Delegate to smart account if not already delegated
+      if (!accountIsDelegated) {
+        console.log("Delegating account to smart account...");
+        
+        const smartSessions = getSmartSessionsValidator({
+          sessions: [session],
+        });
+
+        const sponsorAccount = privateKeyToAccount(
+          process.env.NEXT_PUBLIC_SPONSOR_PK! as Hex,
+        );
+
+        const authorization = await signAuthorization(publicClient, {
+          account: _account,
+          contractAddress: "0x29fcB43b46531BcA003ddC8FCB67FFE91900C762",
+          executor: sponsorAccount,
+        });
+
+        const txHash = await writeContract(publicClient, {
+          address: _account.address,
+          abi: parseAbi([
+            "function setup(address[] calldata _owners,uint256 _threshold,address to,bytes calldata data,address fallbackHandler,address paymentToken,uint256 payment, address paymentReceiver) external",
+          ]),
+          functionName: "setup",
+          args: [
+            [_safeOwner.address],
+            BigInt(1),
+            "0x7579011aB74c46090561ea277Ba79D510c6C00ff",
+            encodeFunctionData({
+              abi: parseAbi([
+                "struct ModuleInit {address module;bytes initData;}",
+                "function addSafe7579(address safe7579,ModuleInit[] calldata validators,ModuleInit[] calldata executors,ModuleInit[] calldata fallbacks, ModuleInit[] calldata hooks,address[] calldata attesters,uint8 threshold) external",
+              ]),
+              functionName: "addSafe7579",
+              args: [
+                "0x7579EE8307284F293B1927136486880611F20002",
+                [
+                  {
+                    module: smartSessions.address,
+                    initData: smartSessions.initData,
+                  },
+                ],
+                [],
+                [],
+                [],
+                [
+                  RHINESTONE_ATTESTER_ADDRESS,
+                  MOCK_ATTESTER_ADDRESS,
+                ],
+                1,
+              ],
+            }),
+            "0x7579EE8307284F293B1927136486880611F20002",
+            zeroAddress,
+            BigInt(0),
+            zeroAddress,
+          ],
+          account: sponsorAccount,
+          authorizationList: [authorization],
+        });
+
+        await publicClient.waitForTransactionReceipt({
+          hash: txHash,
+        });
+
+        setAccountIsDelegated(true);
+        console.log("Account delegated successfully");
+      }
+
+      // Step 3: Get or create smart account client
+      let _smartAccountClient = smartAccountClient;
+      if (!_smartAccountClient || _smartAccountClient.account.address !== _account.address) {
+        const safeAccount = await toSafeSmartAccount({
+          address: _account.address,
+          client: publicClient,
+          owners: [_safeOwner],
+          version: "1.4.1",
+          entryPoint: {
+            address: entryPoint07Address,
+            version: "0.7",
+          },
+          safe4337ModuleAddress: "0x7579EE8307284F293B1927136486880611F20002",
+          erc7579LaunchpadAddress: "0x7579011aB74c46090561ea277Ba79D510c6C00ff",
+        });
+
+        const pimlicoSepoliaUrl = `https://api.pimlico.io/v2/${sepolia.id}/rpc?apikey=${process.env.NEXT_PUBLIC_PIMLICO_API_KEY}`;
+
+        const pimlicoClient = createPimlicoClient({
+          transport: http(pimlicoSepoliaUrl),
+          entryPoint: {
+            address: entryPoint07Address,
+            version: "0.7",
+          },
+        });
+
+        _smartAccountClient = createSmartAccountClient({
+          account: safeAccount,
+          paymaster: pimlicoClient,
+          chain: sepolia,
+          userOperation: {
+            estimateFeesPerGas: async () =>
+              (await pimlicoClient.getUserOperationGasPrice()).fast,
+          },
+          bundlerTransport: http(pimlicoSepoliaUrl),
+        }).extend(erc7579Actions());
+
+        setSmartAccountClient(_smartAccountClient as any);
+      }
+
+      // Step 4: Send UserOp
+      console.log("Sending UserOp...");
+      
+      const nonce = await getAccountNonce(publicClient, {
+        address: _smartAccountClient.account.address,
+        entryPointAddress: entryPoint07Address,
+        key: encodeValidatorNonce({
+          account: getAccount({
+            address: _smartAccountClient.account.address,
+            type: "safe",
+          }),
+          validator: SMART_SESSIONS_ADDRESS,
         }),
-        validator: SMART_SESSIONS_ADDRESS,
-      }),
-    });
+      });
 
-    const sessionDetails = {
-      mode: SmartSessionMode.USE,
-      permissionId: getPermissionId({ session }),
-      signature: getOwnableValidatorMockSignature({
-        threshold: 1,
-      }),
-    };
+      const sessionDetails = {
+        mode: SmartSessionMode.USE,
+        permissionId: getPermissionId({ session }),
+        signature: getOwnableValidatorMockSignature({
+          threshold: 1,
+        }),
+      };
 
-    const userOperation = await smartAccountClient.prepareUserOperation({
-      account: smartAccountClient.account,
-      calls: [getIncrementCalldata()],
-      nonce,
-      signature: encodeSmartSessionSignature(sessionDetails),
-    });
+      const userOperation = await _smartAccountClient.prepareUserOperation({
+        account: _smartAccountClient.account,
+        calls: [getIncrementCalldata()],
+        nonce,
+        signature: encodeSmartSessionSignature(sessionDetails),
+      });
 
-    const userOpHashToSign = getUserOperationHash({
-      chainId: sepolia.id,
-      entryPointAddress: entryPoint07Address,
-      entryPointVersion: "0.7",
-      userOperation,
-    });
+      const userOpHashToSign = getUserOperationHash({
+        chainId: sepolia.id,
+        entryPointAddress: entryPoint07Address,
+        entryPointVersion: "0.7",
+        userOperation,
+      });
 
-    const sessionOwner = privateKeyToAccount(
-      process.env.NEXT_PUBLIC_SESSION_OWNER_PK! as Hex,
-    );
+      const sessionOwner = privateKeyToAccount(
+        process.env.NEXT_PUBLIC_SESSION_OWNER_PK! as Hex,
+      );
 
-    sessionDetails.signature = await sessionOwner.signMessage({
-      message: { raw: userOpHashToSign },
-    });
+      sessionDetails.signature = await sessionOwner.signMessage({
+        message: { raw: userOpHashToSign },
+      });
 
-    userOperation.signature = encodeSmartSessionSignature(sessionDetails);
+      userOperation.signature = encodeSmartSessionSignature(sessionDetails);
 
-    const userOpHash =
-      await smartAccountClient.sendUserOperation(userOperation);
+      const userOpHash =
+        await _smartAccountClient.sendUserOperation(userOperation);
 
-    const receipt = await smartAccountClient.waitForUserOperationReceipt({
-      hash: userOpHash,
-    });
-    console.log("UserOp receipt: ", receipt);
-    
-    // Extract and store the transaction hash
-    if (receipt.receipt && receipt.receipt.transactionHash) {
-      setLastTxHash(receipt.receipt.transactionHash);
+      const receipt = await _smartAccountClient.waitForUserOperationReceipt({
+        hash: userOpHash,
+      });
+      console.log("UserOp receipt: ", receipt);
+      
+      // Extract and store the transaction hash
+      if (receipt.receipt && receipt.receipt.transactionHash) {
+        setLastTxHash(receipt.receipt.transactionHash);
+      }
+
+      setCount(
+        await getCount({
+          publicClient,
+          account: _smartAccountClient.account.address,
+        }),
+      );
+
+      console.log("Complete flow executed successfully!");
+    } catch (error) {
+      console.error("Error in complete flow:", error);
     }
 
-    setCount(
-      await getCount({
-        publicClient,
-        account: smartAccountClient.account.address,
-      }),
-    );
     setUserOpLoading(false);
-  }, [publicClient, smartAccountClient]);
+  }, [publicClient, smartAccountClient, account, safeOwner, accountIsDelegated]);
 
   const getDelegationState = useCallback(async () => {
     if (!account) {
@@ -433,22 +464,14 @@ export default function Home() {
         </div>
 
         <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <Button buttonText="Create EOA" onClick={handleCreateAccount} />
-          <Button
-            buttonText="Delegate to Smart Account"
-            disabled={!account || accountIsDelegated}
-            onClick={handleDelegateAccount}
-            isLoading={delegationLoading}
-          />
           <Button
             buttonText="Send UserOp"
-            disabled={!accountIsDelegated}
             onClick={handleSendUserOp}
             isLoading={userOpLoading}
           />
         </div>
       </main>
-      <Footer count={count} appId={appId} />
+      <Footer />
     </div>
   );
 }
