@@ -13,6 +13,7 @@
     "@rhinestone/module-sdk": "^0.2.10",
     "@rhinestone/sdk": "^0.12.7",
     "@tanstack/react-query": "^5.63.0",
+    "dotenv": "^17.2.0",
     "next": "15.1.4",
     "ox": "^0.6.9",
     "permissionless": "^0.2.25",

@@ -51,6 +51,8 @@ import { Footer } from "@/components/Footer";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { writeContract } from "viem/actions";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
+import { createRhinestoneAccount } from '@rhinestone/sdk';
+import { createWalletClient, parseEther } from 'viem';
 
 const appId = "smart-sessions-7702";
 
@@ -97,8 +99,10 @@ export default function Home() {
   const [accountIsDelegated, setAccountIsDelegated] = useState(false);
 
   const [userOpLoading, setUserOpLoading] = useState(false);
+  const [erc20Loading, setErc20Loading] = useState(false);
   const [count, setCount] = useState<number>(0);
   const [lastTxHash, setLastTxHash] = useState<string>("");
+  const [userOpReceipt, setUserOpReceipt] = useState<any>(null);
 
   useEffect(() => {
     const localAccount = localStorage.getItem("7702-account") || "";
@@ -120,6 +124,9 @@ export default function Home() {
       return;
     }
 
+    // Clear previous transaction info
+    setLastTxHash("");
+    setUserOpReceipt(null);
     setUserOpLoading(true);
 
     try {
@@ -325,6 +332,85 @@ export default function Home() {
     setUserOpLoading(false);
   }, [publicClient, smartAccountClient, account, safeOwner, accountIsDelegated]);
 
+  const handleSendERC20Transaction = useCallback(async () => {
+    if (!publicClient) {
+      console.error("No public client");
+      return;
+    }
+
+    // Clear previous transaction info
+    setLastTxHash("");
+    setUserOpReceipt(null);
+    setErc20Loading(true);
+
+    try {
+      const rhinestoneApiKey = process.env.NEXT_PUBLIC_RHINESTONE_API_KEY;
+      if (!rhinestoneApiKey) {
+        throw new Error('NEXT_PUBLIC_RHINESTONE_API_KEY environment variable is required');
+      }
+
+      // Use your own private key for the smart account owner
+      const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
+      if (!EOA_PK) {
+        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
+      }
+      const account = privateKeyToAccount(EOA_PK);
+      console.log(`Owner private key: ${EOA_PK}`);
+
+      const rhinestoneAccount = await createRhinestoneAccount({
+        owners: {
+          type: 'ecdsa',
+          accounts: [account],
+        },
+        rhinestoneApiKey,
+      });
+      
+      const address = await rhinestoneAccount.getAddress();
+      console.log(`Smart account address: ${address}`);
+
+      console.log(`Funding smart account (${address}) with 0.01 ETH from your EOA (${account.address})...`);
+
+      const walletClient = createWalletClient({
+        account: account,
+        chain: sepolia,
+        transport: http(),
+      });
+
+      const hash = await walletClient.sendTransaction({
+        to: address,
+        value: parseEther('0.01'),
+      });
+      console.log('Transaction sent! Hash:', hash);
+
+      console.log('Waiting for confirmation...');
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      console.log('Smart account funded! Receipt:', receipt);
+
+      const result = await rhinestoneAccount.sendTransaction({
+        chain: sepolia,
+        calls: [],     
+        tokenRequests: [],              // <-- the noop
+      });
+
+      const receipt2 = await rhinestoneAccount.waitForExecution(result);
+      console.log('UserOp receipt / hash', receipt2);
+
+      // Store the UserOp receipt
+      setUserOpReceipt(receipt2);
+
+      // Update the last transaction hash if available
+      if (receipt2 && typeof receipt2 === 'object' && 'hash' in receipt2) {
+        setLastTxHash(receipt2.hash);
+      }
+
+      console.log('ERC20 transaction completed successfully!');
+    } catch (error) {
+      console.error("Error in ERC20 transaction:", error);
+    }
+
+    setErc20Loading(false);
+  }, [publicClient]);
+
   const getDelegationState = useCallback(async () => {
     if (!account) {
       return;
@@ -461,6 +547,25 @@ export default function Home() {
               </a></div>
             </div>
           )}
+          {userOpReceipt && (
+            <div className="mt-4">
+              <div className="font-bold mb-2">UserOp Receipt:</div>
+              <div className="text-sm font-mono">
+                {userOpReceipt.bundleEvent?.bundleId && (
+                  <div><strong>Bundle ID:</strong> {userOpReceipt.bundleEvent.bundleId}</div>
+                )}
+                {userOpReceipt.userAddress && (
+                  <div><strong>User Address:</strong> {userOpReceipt.userAddress}</div>
+                )}
+                {userOpReceipt.targetChainId && (
+                  <div><strong>Target Chain ID:</strong> {userOpReceipt.targetChainId}</div>
+                )}
+                {userOpReceipt.hash && (
+                  <div><strong>Hash:</strong> {userOpReceipt.hash}</div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-4 items-center flex-col sm:flex-row">
@@ -468,6 +573,11 @@ export default function Home() {
             buttonText="Send UserOp"
             onClick={handleSendUserOp}
             isLoading={userOpLoading}
+          />
+          <Button
+            buttonText="Send ERC20 Transaction"
+            onClick={handleSendERC20Transaction}
+            isLoading={erc20Loading}
           />
         </div>
       </main>
