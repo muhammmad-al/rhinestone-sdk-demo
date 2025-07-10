@@ -94,6 +94,11 @@ export default function Home() {
     transport: http(),
   });
 
+  const baseSepoliaPublicClient = createPublicClient({
+    chain: baseSepolia,
+    transport: http(),
+  });
+
   const [account, setAccount] = useState<Account>();
   const [safeOwner, setSafeOwner] = useState<Account>();
 
@@ -114,13 +119,17 @@ export default function Home() {
   const [userOpReceipt, setUserOpReceipt] = useState<unknown>(null);
   const [gelatoTaskId, setGelatoTaskId] = useState<string>("");
   const [gelatoErc20TaskId, setGelatoErc20TaskId] = useState<string>("");
-  const [eoaFunded, setEoaFunded] = useState<"idle" | "no" | "yes">("idle");
+  const [eoaFunded, setEoaFunded] = useState<"idle" | "no" | "yes">("no");
   
   // Latency tracking state
   const [rhinestoneLatency, setRhinestoneLatency] = useState<number | null>(null);
   const [gelatoLatency, setGelatoLatency] = useState<number | null>(null);
   const [rhinestoneStartTime, setRhinestoneStartTime] = useState<number | null>(null);
   const [gelatoStartTime, setGelatoStartTime] = useState<number | null>(null);
+
+  // Gas tracking state
+  const [rhinestoneGasUsed, setRhinestoneGasUsed] = useState<string | null>(null);
+  const [gelatoGasUsed, setGelatoGasUsed] = useState<string | null>(null);
 
   useEffect(() => {
     const localAccount = localStorage.getItem("7702-account") || "";
@@ -158,6 +167,8 @@ export default function Home() {
     setGelatoLatency(null);
     setRhinestoneStartTime(null);
     setGelatoStartTime(null);
+    setRhinestoneGasUsed(null);
+    setGelatoGasUsed(null);
     setCombinedSponsoredLoading(true);
 
     try {
@@ -165,28 +176,28 @@ export default function Home() {
       const [rhinestoneResult, gelatoResult] = await Promise.allSettled([
                 // Rhinestone sponsored transaction
         (async () => {
-          try {
-            const rhinestoneApiKey = process.env.NEXT_PUBLIC_RHINESTONE_API_KEY;
-            if (!rhinestoneApiKey) {
-              throw new Error('NEXT_PUBLIC_RHINESTONE_API_KEY environment variable is required');
-            }
+    try {
+      const rhinestoneApiKey = process.env.NEXT_PUBLIC_RHINESTONE_API_KEY;
+      if (!rhinestoneApiKey) {
+        throw new Error('NEXT_PUBLIC_RHINESTONE_API_KEY environment variable is required');
+      }
 
-            const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
-            if (!EOA_PK) {
-              throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
-            }
-            const account = privateKeyToAccount(EOA_PK);
+      const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
+      if (!EOA_PK) {
+        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
+      }
+      const account = privateKeyToAccount(EOA_PK);
 
-            const rhinestoneAccount = await createRhinestoneAccount({
-              owners: {
-                type: 'ecdsa',
-                accounts: [account],
-              },
-              rhinestoneApiKey,
-            });
-
+      const rhinestoneAccount = await createRhinestoneAccount({
+        owners: {
+          type: 'ecdsa',
+          accounts: [account],
+        },
+        rhinestoneApiKey,
+      });
+      
             const result = await rhinestoneAccount.sendTransaction({
-              chain: sepolia,
+        chain: sepolia,
               calls: [],     
               tokenRequests: [], // Noop transaction
             });
@@ -204,10 +215,12 @@ export default function Home() {
             console.log(`Rhinestone transaction latency: ${(latency / 1000).toFixed(2)}s`);
             
             let txHash: string | undefined;
+            let gasUsed: string | undefined;
             if (receipt2 && typeof receipt2 === 'object' && receipt2 !== null) {
               const receipt = receipt2 as { 
                 fillTransactionHash?: string; 
                 claims?: Array<{ claimTransactionHash?: string }>;
+                gasUsed?: bigint;
               };
               
               txHash = receipt.fillTransactionHash || 
@@ -215,6 +228,18 @@ export default function Home() {
               
               if (txHash) {
                 setRhinestoneTxHash(txHash);
+              }
+
+              // Get gas used from the transaction receipt
+              if (txHash) {
+                try {
+                  const txReceipt = await publicClient.getTransactionReceipt({ hash: txHash as `0x${string}` });
+                  gasUsed = txReceipt.gasUsed.toString();
+                  setRhinestoneGasUsed(gasUsed);
+                  console.log(`Rhinestone gas used: ${gasUsed}`);
+    } catch (error) {
+                  console.error('Error getting Rhinestone gas used:', error);
+                }
               }
             }
 
@@ -227,70 +252,70 @@ export default function Home() {
 
                 // Gelato sponsored transaction
         (async () => {
-          try {
-            const sponsorApiKey = process.env.NEXT_PUBLIC_SPONSOR_API_KEY;
-            if (!sponsorApiKey) {
-              throw new Error('NEXT_PUBLIC_SPONSOR_API_KEY environment variable is required');
-            }
+    try {
+      const sponsorApiKey = process.env.NEXT_PUBLIC_SPONSOR_API_KEY;
+      if (!sponsorApiKey) {
+        throw new Error('NEXT_PUBLIC_SPONSOR_API_KEY environment variable is required');
+      }
 
-            const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
-            if (!EOA_PK) {
-              throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
-            }
-            const owner = privateKeyToAccount(EOA_PK);
+      const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
+      if (!EOA_PK) {
+        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
+      }
+      const owner = privateKeyToAccount(EOA_PK);
 
-            const incrementAbi = [
-              {
-                name: "increment",
-                type: "function",
-                stateMutability: "nonpayable",
-                inputs: [],
-                outputs: [],
-              },
-            ] as const;
+      const incrementAbi = [
+        {
+          name: "increment",
+          type: "function",
+          stateMutability: "nonpayable",
+          inputs: [],
+          outputs: [],
+        },
+      ] as const;
 
-            const incrementData = encodeFunctionData({
-              abi: incrementAbi,
-              functionName: "increment",
-            });
+      const incrementData = encodeFunctionData({
+        abi: incrementAbi,
+        functionName: "increment",
+      });
 
-            const baseSepoliaPublicClient = createPublicClient({
-              chain: baseSepolia,
-              transport: http(),
-            });
+      const baseSepoliaPublicClient = createPublicClient({
+        chain: baseSepolia,
+        transport: http(),
+      });
 
-            const account = await gelato({
-              owner,
-              client: baseSepoliaPublicClient,
-            });
+      const account = await gelato({
+        owner,
+        client: baseSepoliaPublicClient,
+      });
 
-            const client = createWalletClient({
-              account,
-              chain: baseSepolia,
-              transport: http(),
-            });
+      const client = createWalletClient({
+        account,
+        chain: baseSepolia,
+        transport: http(),
+      });
 
             console.log("Creating Gelato smart wallet client...");
-            const swc = await createGelatoSmartWalletClient(client, {
-              apiKey: sponsorApiKey,
-            });
+      const swc = await createGelatoSmartWalletClient(client, {
+        apiKey: sponsorApiKey,
+      });
 
                         console.log("Preparing Gelato transaction...");
-            const preparedCalls = await swc.prepare({
-              payment: sponsored(sponsorApiKey),
-              calls: [
-                {
+      const preparedCalls = await swc.prepare({
+        payment: sponsored(sponsorApiKey),
+        calls: [
+          {
                   to: "0x19575934a9542be941d3206f3ecff4a5ffb9af88" as `0x${string}`,
-                  data: incrementData,
-                  value: 0n,
-                },
-              ],
-            });
+            data: incrementData,
+            value: 0n,
+          },
+        ],
+      });
 
             console.log("Sending Gelato transaction...");
-            const response = await swc.send({
-              preparedCalls,
-            });
+      const response = await swc.send({
+        preparedCalls,
+      });
 
       setGelatoTaskId(response.id);
 
@@ -301,7 +326,7 @@ export default function Home() {
             console.log('Starting Gelato sponsored transaction timing (after network submission)...');
 
                                     return new Promise((resolve, reject) => {
-              response.on("success", (status: GelatoTaskStatus) => {
+      response.on("success", (status: GelatoTaskStatus) => {
                 const endTime = Date.now();
                 const latency = endTime - gelatoLocalStartTime;
                 setGelatoLatency(latency);
@@ -310,6 +335,35 @@ export default function Home() {
                 console.log("Gelato transaction successful:", status);
                 if (status.transactionHash) {
                   setGelatoTxHash(status.transactionHash);
+                  
+                  // Get gas used from transaction receipt with retries
+                  (async () => {
+                    let retries = 0;
+                    const maxRetries = 10;
+                    const retryDelay = 2000; // 2 seconds
+                    
+                    while (retries < maxRetries) {
+                      try {
+                        console.log(`Attempting to get Gelato gas used (attempt ${retries + 1}/${maxRetries})...`);
+                        const txReceipt = await baseSepoliaPublicClient.getTransactionReceipt({ 
+                          hash: status.transactionHash as `0x${string}` 
+                        });
+                        console.log('Full transaction receipt:', txReceipt);
+                        const gasUsed = txReceipt.gasUsed.toString();
+                        setGelatoGasUsed(gasUsed);
+                        console.log(`Gelato gas used: ${gasUsed}`);
+                        break;
+                      } catch (error) {
+                        retries++;
+                        if (retries >= maxRetries) {
+                          console.error('Failed to get Gelato gas used after all retries:', error);
+                          break;
+                        }
+                        console.log(`Transaction receipt not ready yet, retrying in ${retryDelay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                      }
+                    }
+                  })();
                 }
                 resolve({ success: true, provider: 'Gelato', hash: status.transactionHash });
       });
@@ -360,6 +414,8 @@ export default function Home() {
     setGelatoLatency(null);
     setRhinestoneStartTime(null);
     setGelatoStartTime(null);
+    setRhinestoneGasUsed(null);
+    setGelatoGasUsed(null);
     setCombinedErc20Loading(true);
 
     try {
@@ -428,10 +484,12 @@ export default function Home() {
             console.log(`Rhinestone ERC20 transaction latency (excluding funding): ${(latency / 1000).toFixed(2)}s`);
             
             let txHash: string | undefined;
+            let gasUsed: string | undefined;
             if (receipt2 && typeof receipt2 === 'object' && receipt2 !== null) {
               const receipt = receipt2 as { 
                 fillTransactionHash?: string; 
                 claims?: Array<{ claimTransactionHash?: string }>;
+                gasUsed?: bigint;
               };
               
               txHash = receipt.fillTransactionHash || 
@@ -439,6 +497,18 @@ export default function Home() {
               
               if (txHash) {
                 setRhinestoneTxHash(txHash);
+              }
+
+              // Get gas used from the transaction receipt
+              if (txHash) {
+                try {
+                  const txReceipt = await publicClient.getTransactionReceipt({ hash: txHash as `0x${string}` });
+                  gasUsed = txReceipt.gasUsed.toString();
+                  setRhinestoneGasUsed(gasUsed);
+                  console.log(`Rhinestone ERC20 gas used: ${gasUsed}`);
+                } catch (error) {
+                  console.error('Error getting Rhinestone ERC20 gas used:', error);
+                }
               }
             }
 
@@ -520,6 +590,35 @@ export default function Home() {
                 console.log(`Gelato ERC20 Transaction successful: https://sepolia.basescan.org/tx/${status.transactionHash}`);
                 if (status.transactionHash) {
                   setGelatoTxHash(status.transactionHash);
+                  
+                  // Get gas used from transaction receipt with retries
+                  (async () => {
+                    let retries = 0;
+                    const maxRetries = 10;
+                    const retryDelay = 2000; // 2 seconds
+                    
+                    while (retries < maxRetries) {
+                      try {
+                        console.log(`Attempting to get Gelato ERC20 gas used (attempt ${retries + 1}/${maxRetries})...`);
+                        const txReceipt = await baseSepoliaPublicClient.getTransactionReceipt({ 
+                          hash: status.transactionHash as `0x${string}` 
+                        });
+                        console.log('Full transaction receipt:', txReceipt);
+                        const gasUsed = txReceipt.gasUsed.toString();
+                        setGelatoGasUsed(gasUsed);
+                        console.log(`Gelato ERC20 gas used: ${gasUsed}`);
+                        break;
+                      } catch (error) {
+                        retries++;
+                        if (retries >= maxRetries) {
+                          console.error('Failed to get Gelato ERC20 gas used after all retries:', error);
+                          break;
+                        }
+                        console.log(`Transaction receipt not ready yet, retrying in ${retryDelay}ms...`);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                      }
+                    }
+                  })();
                 }
                 resolve({ success: true, provider: 'Gelato', hash: status.transactionHash });
       });
@@ -665,12 +764,10 @@ export default function Home() {
             {account && <>Account {!accountIsDelegated && "not"} delegated</>}
           </div>
             
-            {/* Funding status indicator for EOA, only show if eoaFunded is not 'idle' */}
-            {eoaFunded !== "idle" && (
-              <div className="mt-4">
-                <strong>EOA funded:</strong> {eoaFunded === "yes" ? "yes" : "no"}
-              </div>
-            )}
+            {/* Funding status indicator for EOA */}
+            <div className="mt-4">
+              <strong>EOA funded:</strong> {eoaFunded === "yes" ? "yes" : "no"}
+            </div>
           {lastTxHash && lastTxChain === "sepolia" && (
               <div className="mt-4">
               <div>Transaction Hash: <a 
@@ -697,6 +794,11 @@ export default function Home() {
                 {rhinestoneLatency && (
                   <div className="mt-2">
                     <strong>Latency:</strong> {(rhinestoneLatency / 1000).toFixed(2)}s
+                  </div>
+                )}
+                {rhinestoneGasUsed && (
+                  <div className="mt-2">
+                    <strong>Gas Used:</strong> {rhinestoneGasUsed}
                   </div>
                 )}
               </div>
@@ -762,18 +864,23 @@ export default function Home() {
                 <div><strong>Gelato TX Hash:</strong></div>
                 <div><a 
                   href={`https://sepolia.basescan.org/tx/${gelatoTxHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline"
-                >
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                  >
                   {gelatoTxHash}
                 </a></div>
                                 {gelatoLatency && (
                   <div className="mt-2">
                     <strong>Latency:</strong> {(gelatoLatency / 1000).toFixed(2)}s
-                  </div>
+                </div>
                 )}
+                {gelatoGasUsed && (
+                  <div className="mt-2">
+                    <strong>Gas Used:</strong> {gelatoGasUsed}
               </div>
+            )}
+          </div>
             )}
             {lastTxHash && lastTxChain === "base-sepolia" && (
               <div className="mt-4">
@@ -787,10 +894,10 @@ export default function Home() {
                 </a></div>
               </div>
             )}
-                </div>
+          </div>
           <div className="flex-1 flex flex-col justify-end">
           <div className="flex gap-4 items-center flex-col sm:flex-row">
-              </div>
+            </div>
           </div>
         </div>
       </div>
