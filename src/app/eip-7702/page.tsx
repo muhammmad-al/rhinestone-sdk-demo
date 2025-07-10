@@ -115,6 +115,7 @@ export default function Home() {
   const [userOpReceipt, setUserOpReceipt] = useState<any>(null);
   const [gelatoTaskId, setGelatoTaskId] = useState<string>("");
   const [gelatoErc20TaskId, setGelatoErc20TaskId] = useState<string>("");
+  const [eoaFunded, setEoaFunded] = useState<"idle" | "no" | "yes">("idle");
 
   useEffect(() => {
     const localAccount = localStorage.getItem("7702-account") || "";
@@ -131,6 +132,7 @@ export default function Home() {
 
 
   const handleSendUserOp = useCallback(async () => {
+    setEoaFunded("idle");
     if (!publicClient) {
       console.error("No public client");
       return;
@@ -355,6 +357,7 @@ export default function Home() {
     setLastTxHash("");
     setUserOpReceipt(null);
     setErc20Loading(true);
+    setEoaFunded("no"); // Start with not funded
 
     try {
       const rhinestoneApiKey = process.env.NEXT_PUBLIC_RHINESTONE_API_KEY;
@@ -398,6 +401,7 @@ export default function Home() {
       console.log('Waiting for confirmation...');
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       console.log('Smart account funded! Receipt:', receipt);
+      setEoaFunded("yes"); // Mark as funded
 
       const result = await rhinestoneAccount.sendTransaction({
         chain: sepolia,
@@ -413,7 +417,7 @@ export default function Home() {
 
       // Update the last transaction hash if available
       if (receipt2 && typeof receipt2 === 'object' && 'hash' in receipt2) {
-        setLastTxHash(receipt2.hash);
+        setLastTxHash(receipt2.hash as string);
       }
 
       console.log('ERC20 transaction completed successfully!');
@@ -425,6 +429,7 @@ export default function Home() {
   }, [publicClient]);
 
   const handleSendGelatoTransaction = useCallback(async () => {
+    setEoaFunded("idle");
     if (!publicClient) {
       console.error("No public client");
       return;
@@ -449,6 +454,7 @@ export default function Home() {
         throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
       }
       const owner = privateKeyToAccount(EOA_PK);
+      // setGelatoOwner(owner.address); // Track owner address
       console.log(`Owner private key: ${EOA_PK}`);
       console.log(`Owner address: ${owner.address}`);
 
@@ -480,7 +486,7 @@ export default function Home() {
         owner,
         client: baseSepoliaPublicClient,
       });
-
+      // setGelatoSmartWallet(account.address); // Track smart wallet address
       console.log("Account address:", account.address);
       const client = createWalletClient({
         account,
@@ -535,6 +541,7 @@ export default function Home() {
   }, [publicClient]);
 
   const handleSendGelatoERC20Transaction = useCallback(async () => {
+    setEoaFunded("idle");
     if (!publicClient) {
       console.error("No public client");
       return;
@@ -554,6 +561,7 @@ export default function Home() {
         throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
       }
       const owner = privateKeyToAccount(EOA_PK);
+      // setGelatoOwner(owner.address); // Track owner address
       console.log(`Owner private key: ${EOA_PK}`);
       console.log(`Owner address: ${owner.address}`);
 
@@ -583,7 +591,7 @@ export default function Home() {
         owner,
         client: baseSepoliaPublicClient,
       });
-
+      // setGelatoSmartWallet(account.address); // Track smart wallet address
       console.log("Account address:", account.address);
       const client = createWalletClient({
         account,
@@ -728,11 +736,15 @@ export default function Home() {
     getSmartAccountClient,
   ]);
 
+  // Gelato addresses are static for this demo
+  const gelatoOwner = "0x17a8d10B832d69a8c1389F686E7795ec8409F264";
+  const gelatoSmartWallet = "0x17a8d10B832d69a8c1389F686E7795ec8409F264";
+
   return (
     <div className="min-h-screen p-8 pb-20 font-[family-name:var(--font-geist-sans)] flex items-center justify-center">
-      <div className="flex flex-col lg:flex-row gap-8 max-w-6xl">
+      <div className="flex flex-col lg:flex-row max-w-6xl w-full">
         {/* Rhinestone Section - Left Side */}
-        <div className="flex-1 flex flex-col gap-8">
+        <div className="flex-1 flex flex-col gap-8 pr-8 h-96">
           <div className="flex flex-row items-center align-center">
             <Image
               className="dark:invert"
@@ -744,14 +756,7 @@ export default function Home() {
             />{" "}
             <span className="text-lg font-bold">x 7702</span>
           </div>
-          <ol className="list-inside list-decimal text-sm font-[family-name:var(--font-geist-mono)]">
-            <li className="mb-2">Create an EOA.</li>
-            <li className="mb-2">Delegate to a smart account.</li>
-            <li className="mb-2">
-              Use the session key to send UserOperations without a user signature.
-            </li>
-          </ol>
-          <div className="font-[family-name:var(--font-geist-mono)] text-sm">
+          <div className="font-[family-name:var(--font-geist-mono)] text-sm flex-1 break-words">
             <div>{account && <>Account: {account.address}</>}</div>
             <div>
               {sessionOwner && <>Session owner: {sessionOwner.address}</>}
@@ -759,13 +764,19 @@ export default function Home() {
                       <div>
             {account && <>Account {!accountIsDelegated && "not"} delegated</>}
           </div>
+          {/* Funding status indicator for EOA, only show if eoaFunded is not 'idle' */}
+          {eoaFunded !== "idle" && (
+            <div className="mb-2">
+              <strong>EOA funded:</strong> {eoaFunded === "yes" ? "yes" : "no"}
+            </div>
+          )}
           {lastTxHash && lastTxChain === "sepolia" && (
             <div>
               <div>Transaction Hash: <a 
                 href={`https://sepolia.etherscan.io/tx/${lastTxHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline"
+                className="text-blue-600 dark:text-blue-400 hover:underline break-all"
               >
                 {lastTxHash}
               </a></div>
@@ -774,18 +785,18 @@ export default function Home() {
             {userOpReceipt && (
               <div className="mt-4">
                 <div className="font-bold mb-2">UserOp Receipt:</div>
-                <div className="text-sm font-mono">
+                <div className="text-sm font-mono break-words">
                   {userOpReceipt.bundleEvent?.bundleId && (
-                    <div><strong>Bundle ID:</strong> {userOpReceipt.bundleEvent.bundleId}</div>
+                    <div><strong>Bundle ID:</strong> <span className="break-all">{userOpReceipt.bundleEvent.bundleId}</span></div>
                   )}
                   {userOpReceipt.userAddress && (
-                    <div><strong>User Address:</strong> {userOpReceipt.userAddress}</div>
+                    <div><strong>User Address:</strong> <span className="break-all">{userOpReceipt.userAddress}</span></div>
                   )}
                   {userOpReceipt.targetChainId && (
                     <div><strong>Target Chain ID:</strong> {userOpReceipt.targetChainId}</div>
                   )}
                   {userOpReceipt.hash && (
-                    <div><strong>Hash:</strong> {userOpReceipt.hash}</div>
+                    <div><strong>Hash:</strong> <span className="break-all">{userOpReceipt.hash}</span></div>
                   )}
                 </div>
               </div>
@@ -806,13 +817,27 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Vertical Divider */}
+        <div className="w-px bg-gray-300 dark:bg-gray-700 mx-4 flex-shrink-0 self-stretch"></div>
+
         {/* Gelato Section - Right Side */}
-        <div className="flex-1 flex flex-col gap-8 border-l border-gray-300 dark:border-gray-700 pl-8">
-          <div className="flex flex-row items-center align-center">
-            <div className="text-2xl font-bold">Gelato Smart Wallet</div>
+        <div className="flex-1 flex flex-col gap-8 pl-8 h-96">
+          <div className="flex flex-row items-center align-center mt-2">
+            <Image
+              src="/gelato.svg"
+              alt="Gelato logo"
+              width={38}
+              height={38}
+              priority
+            />
+            <span className="text-2xl font-bold ml-2">Gelato Smart Wallet</span>
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400">
-            <p>Gelato Smart Wallet implementation will be added here for benchmarking comparison.</p>
+            {/* Gelato account info */}
+            <div className="font-[family-name:var(--font-geist-mono)] text-sm break-words mb-2">
+              <div>Owner: <span className="break-all">{gelatoOwner}</span></div>
+              <div>Smart Wallet: <span className="break-all">{gelatoSmartWallet}</span></div>
+            </div>
             {gelatoTaskId && (
               <div className="mt-4">
                 <div><strong>Gelato Task ID:</strong> {gelatoTaskId}</div>
@@ -856,17 +881,19 @@ export default function Home() {
               </div>
             )}
           </div>
-          <div className="flex gap-4 items-center flex-col sm:flex-row">
-            <Button
-              buttonText="Send Sponsored Transaction"
-              onClick={handleSendGelatoTransaction}
-              isLoading={gelatoLoading}
-            />
-            <Button
-              buttonText="Send ERC20 Transaction"
-              onClick={handleSendGelatoERC20Transaction}
-              isLoading={gelatoErc20Loading}
-            />
+          <div className="flex-1 flex flex-col justify-end">
+            <div className="flex gap-4 items-center flex-col sm:flex-row">
+              <Button
+                buttonText="Send Sponsored Transaction"
+                onClick={handleSendGelatoTransaction}
+                isLoading={gelatoLoading}
+              />
+              <Button
+                buttonText="Send ERC20 Transaction"
+                onClick={handleSendGelatoERC20Transaction}
+                isLoading={gelatoErc20Loading}
+              />
+            </div>
           </div>
         </div>
       </div>
