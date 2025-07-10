@@ -139,7 +139,6 @@ export default function Home() {
 
     // Clear previous transaction info
     setLastTxHash("");
-    setUserOpReceipt(null);
     setUserOpLoading(true);
 
     try {
@@ -349,7 +348,6 @@ export default function Home() {
 
     // Clear previous transaction info
     setLastTxHash("");
-    setUserOpReceipt(null);
     setErc20Loading(true);
     setEoaFunded("no"); // Start with not funded
 
@@ -403,15 +401,24 @@ export default function Home() {
         tokenRequests: [],              // <-- the noop
       });
 
-      const receipt2: unknown = await rhinestoneAccount.waitForExecution(result);
+      const receipt2: unknown = await rhinestoneAccount.waitForExecution(result, false);
       console.log('UserOp receipt / hash', receipt2);
 
-      // Store the UserOp receipt
-      setUserOpReceipt(receipt2);
-
       // Update the last transaction hash if available
-      if (receipt2 && typeof receipt2 === 'object' && 'hash' in receipt2) {
-        setLastTxHash((receipt2 as { hash: string }).hash);
+      if (receipt2 && typeof receipt2 === 'object' && receipt2 !== null) {
+        const receipt = receipt2 as { 
+          fillTransactionHash?: string; 
+          claims?: Array<{ claimTransactionHash?: string }>;
+        };
+        
+        // Try to get the transaction hash from fillTransactionHash first, then from claims
+        const txHash = receipt.fillTransactionHash || 
+          (receipt.claims && receipt.claims[0]?.claimTransactionHash);
+        
+        if (txHash) {
+          setLastTxHash(txHash);
+          setLastTxChain("sepolia");
+        }
       }
 
       console.log('ERC20 transaction completed successfully!');
@@ -771,25 +778,6 @@ export default function Home() {
               </a></div>
             </div>
           )}
-            {userOpReceipt && (
-              <div className="mt-4">
-                <div className="font-bold mb-2">UserOp Receipt:</div>
-                <div className="text-sm font-mono break-words">
-                  {userOpReceipt.bundleEvent?.bundleId && (
-                    <div><strong>Bundle ID:</strong> <span className="break-all">{userOpReceipt.bundleEvent.bundleId}</span></div>
-                  )}
-                  {userOpReceipt.userAddress && (
-                    <div><strong>User Address:</strong> <span className="break-all">{userOpReceipt.userAddress}</span></div>
-                  )}
-                  {userOpReceipt.targetChainId && (
-                    <div><strong>Target Chain ID:</strong> {userOpReceipt.targetChainId}</div>
-                  )}
-                  {userOpReceipt.hash && (
-                    <div><strong>Hash:</strong> <span className="break-all">{userOpReceipt.hash}</span></div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="flex gap-4 items-center flex-col sm:flex-row">
