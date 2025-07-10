@@ -44,7 +44,7 @@ import {
   getPermissionId,
   SMART_SESSIONS_ADDRESS,
 } from "@rhinestone/module-sdk";
-import { sepolia } from "viem/chains";
+import { sepolia, baseSepolia } from "viem/chains";
 import { getAccountNonce } from "permissionless/actions";
 import { erc7579Actions } from "permissionless/actions/erc7579";
 import { Footer } from "@/components/Footer";
@@ -53,6 +53,13 @@ import { writeContract } from "viem/actions";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
 import { createRhinestoneAccount } from '@rhinestone/sdk';
 import { createWalletClient, parseEther } from 'viem';
+import {
+  createGelatoSmartWalletClient,
+  type GelatoTaskStatus,
+  sponsored,
+  erc20,
+} from "@gelatonetwork/smartwallet";
+import { gelato } from "@gelatonetwork/smartwallet/accounts";
 
 const appId = "smart-sessions-7702";
 
@@ -100,9 +107,14 @@ export default function Home() {
 
   const [userOpLoading, setUserOpLoading] = useState(false);
   const [erc20Loading, setErc20Loading] = useState(false);
+  const [gelatoLoading, setGelatoLoading] = useState(false);
+  const [gelatoErc20Loading, setGelatoErc20Loading] = useState(false);
   const [count, setCount] = useState<number>(0);
   const [lastTxHash, setLastTxHash] = useState<string>("");
+  const [lastTxChain, setLastTxChain] = useState<string>("sepolia");
   const [userOpReceipt, setUserOpReceipt] = useState<any>(null);
+  const [gelatoTaskId, setGelatoTaskId] = useState<string>("");
+  const [gelatoErc20TaskId, setGelatoErc20TaskId] = useState<string>("");
 
   useEffect(() => {
     const localAccount = localStorage.getItem("7702-account") || "";
@@ -411,6 +423,205 @@ export default function Home() {
     setErc20Loading(false);
   }, [publicClient]);
 
+  const handleSendGelatoTransaction = useCallback(async () => {
+    if (!publicClient) {
+      console.error("No public client");
+      return;
+    }
+
+    setGelatoLoading(true);
+
+    try {
+      const sponsorApiKey = process.env.NEXT_PUBLIC_SPONSOR_API_KEY;
+      if (!sponsorApiKey) {
+        throw new Error('NEXT_PUBLIC_SPONSOR_API_KEY environment variable is required');
+      }
+
+      // Use your own private key for the smart account owner
+      const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
+      if (!EOA_PK) {
+        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
+      }
+      const owner = privateKeyToAccount(EOA_PK);
+      console.log(`Owner private key: ${EOA_PK}`);
+      console.log(`Owner address: ${owner.address}`);
+
+      // Example of creating a payload for increment() function
+      const incrementAbi = [
+        {
+          name: "increment",
+          type: "function",
+          stateMutability: "nonpayable",
+          inputs: [],
+          outputs: [],
+        },
+      ] as const;
+
+      // Create the encoded function data
+      const incrementData = encodeFunctionData({
+        abi: incrementAbi,
+        functionName: "increment",
+      });
+
+      console.log("Encoded increment() function data:", incrementData);
+
+      const baseSepoliaPublicClient = createPublicClient({
+        chain: baseSepolia,
+        transport: http(),
+      });
+
+      const account = await gelato({
+        owner,
+        client: baseSepoliaPublicClient,
+      });
+
+      console.log("Account address:", account.address);
+      const client = createWalletClient({
+        account,
+        chain: baseSepolia,
+        transport: http(),
+      });
+
+      const swc = await createGelatoSmartWalletClient(client, {
+        apiKey: sponsorApiKey,
+      });
+
+      console.log("Preparing transaction...");
+      const preparedCalls = await swc.prepare({
+        payment: sponsored(sponsorApiKey),
+        calls: [
+          {
+            to: "0x19575934a9542be941d3206f3ecff4a5ffb9af88" as `0x${string}`, // Using the same target contract as Rhinestone
+            data: incrementData,
+            value: 0n,
+          },
+        ],
+      });
+
+      const response = await swc.send({
+        preparedCalls,
+      });
+
+      console.log(`Your Gelato id is: ${response.id}`);
+      setGelatoTaskId(response.id);
+
+      console.log(
+        `Check the status of your request here: https://api.gelato.digital/tasks/status/${response.id}`
+      );
+      console.log("Waiting for transaction to be confirmed...");
+
+      // Listen for events
+      response.on("success", (status: GelatoTaskStatus) => {
+        console.log(`Transaction successful: https://sepolia.basescan.org/tx/${status.transactionHash}`);
+        setLastTxHash(status.transactionHash);
+        setLastTxChain("base-sepolia");
+        setGelatoLoading(false);
+      });
+      response.on("error", (error: Error) => {
+        console.error(`Transaction failed: ${error.message}`);
+        setGelatoLoading(false);
+      });
+
+    } catch (error) {
+      console.error("Error in Gelato transaction:", error);
+      setGelatoLoading(false);
+    }
+  }, [publicClient]);
+
+  const handleSendGelatoERC20Transaction = useCallback(async () => {
+    if (!publicClient) {
+      console.error("No public client");
+      return;
+    }
+
+    setGelatoErc20Loading(true);
+
+    try {
+      // Use your own private key for the smart account owner
+      const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
+      if (!EOA_PK) {
+        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
+      }
+      const owner = privateKeyToAccount(EOA_PK);
+      console.log(`Owner private key: ${EOA_PK}`);
+      console.log(`Owner address: ${owner.address}`);
+
+      // Example of creating a payload for increment() function
+      const incrementAbi = [{
+        name: "increment",
+        type: "function",
+        stateMutability: "nonpayable",
+        inputs: [],
+        outputs: []
+      }] as const;
+
+      // Create the encoded function data
+      const incrementData = encodeFunctionData({
+        abi: incrementAbi,
+        functionName: "increment"
+      });
+
+      console.log("Encoded increment() function data:", incrementData);
+
+      const baseSepoliaPublicClient = createPublicClient({
+        chain: baseSepolia,
+        transport: http(),
+      });
+
+      const account = await gelato({
+        owner,
+        client: baseSepoliaPublicClient,
+      });
+
+      console.log("Account address:", account.address);
+      const client = createWalletClient({
+        account,
+        chain: baseSepolia,
+        transport: http(),
+      });
+
+      const swc = await createGelatoSmartWalletClient(client);
+
+      // Using USDC on Base Sepolia for ERC20 payment
+      const usdcAddress = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as `0x${string}`; // Base Sepolia USDC
+
+      const response = await swc.execute({
+        payment: erc20(usdcAddress),
+        calls: [
+          {
+            to: "0x19575934a9542be941d3206f3ecff4a5ffb9af88" as `0x${string}`, // Using the same target contract
+            data: incrementData,
+            value: 0n,
+          },
+        ],
+      });
+
+      console.log(`Your Gelato ERC20 id is: ${response.id}`);
+      setGelatoErc20TaskId(response.id);
+
+      console.log(
+        `Check the status of your request here: https://api.gelato.digital/tasks/status/${response.id}`
+      );
+      console.log("Waiting for transaction to be confirmed...");
+
+      // Listen for events
+      response.on("success", (status: GelatoTaskStatus) => {
+        console.log(`ERC20 Transaction successful: https://sepolia.basescan.org/tx/${status.transactionHash}`);
+        setLastTxHash(status.transactionHash);
+        setLastTxChain("base-sepolia");
+        setGelatoErc20Loading(false);
+      });
+      response.on("error", (error: Error) => {
+        console.error(`ERC20 Transaction failed: ${error.message}`);
+        setGelatoErc20Loading(false);
+      });
+
+    } catch (error) {
+      console.error("Error in Gelato ERC20 transaction:", error);
+      setGelatoErc20Loading(false);
+    }
+  }, [publicClient]);
+
   const getDelegationState = useCallback(async () => {
     if (!account) {
       return;
@@ -507,80 +718,135 @@ export default function Home() {
   ]);
 
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <div className="flex flex-row items-center align-center">
-          <Image
-            className="dark:invert"
-            src="/rhinestone.svg"
-            alt="Rhinestone logo"
-            width={180}
-            height={38}
-            priority
-          />{" "}
-          <span className="text-lg font-bold">x 7702</span>
-        </div>
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">Create an EOA.</li>
-          <li className="mb-2">Delegate to a smart account.</li>
-          <li className="mb-2">
-            Use the session key to send UserOperations without a user signature.
-          </li>
-        </ol>
-        <div className="font-[family-name:var(--font-geist-mono)] text-sm">
-          <div>{account && <>Account: {account.address}</>}</div>
-          <div>
-            {sessionOwner && <>Session owner: {sessionOwner.address}</>}
+    <div className="min-h-screen p-8 pb-20 font-[family-name:var(--font-geist-sans)] flex items-center justify-center">
+      <div className="flex flex-col lg:flex-row gap-8 max-w-6xl">
+        {/* Rhinestone Section - Left Side */}
+        <div className="flex-1 flex flex-col gap-8">
+          <div className="flex flex-row items-center align-center">
+            <Image
+              className="dark:invert"
+              src="/rhinestone.svg"
+              alt="Rhinestone logo"
+              width={180}
+              height={38}
+              priority
+            />{" "}
+            <span className="text-lg font-bold">x 7702</span>
           </div>
-          <div>
+          <ol className="list-inside list-decimal text-sm font-[family-name:var(--font-geist-mono)]">
+            <li className="mb-2">Create an EOA.</li>
+            <li className="mb-2">Delegate to a smart account.</li>
+            <li className="mb-2">
+              Use the session key to send UserOperations without a user signature.
+            </li>
+          </ol>
+          <div className="font-[family-name:var(--font-geist-mono)] text-sm">
+            <div>{account && <>Account: {account.address}</>}</div>
+            <div>
+              {sessionOwner && <>Session owner: {sessionOwner.address}</>}
+            </div>
+                      <div>
             {account && <>Account {!accountIsDelegated && "not"} delegated</>}
           </div>
-          {lastTxHash && (
-            <div>
-              <div>Transaction Hash: <a 
-                href={`https://sepolia.etherscan.io/tx/${lastTxHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                {lastTxHash}
-              </a></div>
-            </div>
-          )}
-          {userOpReceipt && (
-            <div className="mt-4">
-              <div className="font-bold mb-2">UserOp Receipt:</div>
-              <div className="text-sm font-mono">
-                {userOpReceipt.bundleEvent?.bundleId && (
-                  <div><strong>Bundle ID:</strong> {userOpReceipt.bundleEvent.bundleId}</div>
-                )}
-                {userOpReceipt.userAddress && (
-                  <div><strong>User Address:</strong> {userOpReceipt.userAddress}</div>
-                )}
-                {userOpReceipt.targetChainId && (
-                  <div><strong>Target Chain ID:</strong> {userOpReceipt.targetChainId}</div>
-                )}
-                {userOpReceipt.hash && (
-                  <div><strong>Hash:</strong> {userOpReceipt.hash}</div>
-                )}
+            {userOpReceipt && (
+              <div className="mt-4">
+                <div className="font-bold mb-2">UserOp Receipt:</div>
+                <div className="text-sm font-mono">
+                  {userOpReceipt.bundleEvent?.bundleId && (
+                    <div><strong>Bundle ID:</strong> {userOpReceipt.bundleEvent.bundleId}</div>
+                  )}
+                  {userOpReceipt.userAddress && (
+                    <div><strong>User Address:</strong> {userOpReceipt.userAddress}</div>
+                  )}
+                  {userOpReceipt.targetChainId && (
+                    <div><strong>Target Chain ID:</strong> {userOpReceipt.targetChainId}</div>
+                  )}
+                  {userOpReceipt.hash && (
+                    <div><strong>Hash:</strong> {userOpReceipt.hash}</div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          <div className="flex gap-4 items-center flex-col sm:flex-row">
+            <Button
+              buttonText="Send UserOp"
+              onClick={handleSendUserOp}
+              isLoading={userOpLoading}
+            />
+            <Button
+              buttonText="Send ERC20 Transaction"
+              onClick={handleSendERC20Transaction}
+              isLoading={erc20Loading}
+            />
+          </div>
         </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <Button
-            buttonText="Send UserOp"
-            onClick={handleSendUserOp}
-            isLoading={userOpLoading}
-          />
-          <Button
-            buttonText="Send ERC20 Transaction"
-            onClick={handleSendERC20Transaction}
-            isLoading={erc20Loading}
-          />
+        {/* Gelato Section - Right Side */}
+        <div className="flex-1 flex flex-col gap-8 border-l border-gray-300 dark:border-gray-700 pl-8">
+          <div className="flex flex-row items-center align-center">
+            <div className="text-2xl font-bold">Gelato Smart Wallet</div>
+          </div>
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            <p>Gelato Smart Wallet implementation will be added here for benchmarking comparison.</p>
+            {gelatoTaskId && (
+              <div className="mt-4">
+                <div><strong>Gelato Task ID:</strong> {gelatoTaskId}</div>
+                <div>
+                  <a 
+                    href={`https://api.gelato.digital/tasks/status/${gelatoTaskId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Check Status
+                  </a>
+                </div>
+              </div>
+            )}
+            {lastTxHash && lastTxChain === "base-sepolia" && (
+              <div className="mt-4">
+                <div><strong>Transaction Hash:</strong> <a 
+                  href={`https://sepolia.basescan.org/tx/${lastTxHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  {lastTxHash}
+                </a></div>
+              </div>
+            )}
+            {gelatoErc20TaskId && (
+              <div className="mt-4">
+                <div><strong>Gelato ERC20 Task ID:</strong> {gelatoErc20TaskId}</div>
+                <div>
+                  <a 
+                    href={`https://api.gelato.digital/tasks/status/${gelatoErc20TaskId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Check ERC20 Status
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-4 items-center flex-col sm:flex-row">
+            <Button
+              buttonText="Send Sponsored Transaction"
+              onClick={handleSendGelatoTransaction}
+              isLoading={gelatoLoading}
+            />
+            <Button
+              buttonText="Send ERC20 Transaction"
+              onClick={handleSendGelatoERC20Transaction}
+              isLoading={gelatoErc20Loading}
+            />
+          </div>
         </div>
-      </main>
+      </div>
       <Footer />
     </div>
   );

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@axiom-crypto/keystore-sdk": "^0.2.3",
+    "@gelatonetwork/smartwallet": "^0.0.20",
     "@rhinestone/module-sdk": "^0.2.10",
     "@rhinestone/sdk": "^0.12.7",
     "@tanstack/react-query": "^5.63.0",
