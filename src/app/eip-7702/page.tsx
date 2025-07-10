@@ -1,6 +1,6 @@
 "use client";
 import { Button } from "@/components/Button";
-import { getCount, getIncrementCalldata } from "@/components/Counter";
+import { getIncrementCalldata } from "@/components/Counter";
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import {
