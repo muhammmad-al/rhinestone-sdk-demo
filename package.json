@@ -18,6 +18,7 @@
     "next": "15.1.4",
     "ox": "^0.6.9",
     "permissionless": "^0.2.25",
+    "pino-pretty": "^13.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.28.3",

@@ -61,8 +61,6 @@ import {
 } from "@gelatonetwork/smartwallet";
 import { gelato } from "@gelatonetwork/smartwallet/accounts";
 
-const appId = "smart-sessions-7702";
-
 const sessionOwner = privateKeyToAccount(
   process.env.NEXT_PUBLIC_SESSION_OWNER_PK! as Hex,
 );
@@ -109,10 +107,11 @@ export default function Home() {
   const [erc20Loading, setErc20Loading] = useState(false);
   const [gelatoLoading, setGelatoLoading] = useState(false);
   const [gelatoErc20Loading, setGelatoErc20Loading] = useState(false);
-  const [count, setCount] = useState<number>(0);
+  // Removed unused variable 'count' to fix ESLint error
   const [lastTxHash, setLastTxHash] = useState<string>("");
   const [lastTxChain, setLastTxChain] = useState<string>("sepolia");
-  const [userOpReceipt, setUserOpReceipt] = useState<any>(null);
+  // Use 'unknown' instead of 'any' for userOpReceipt to satisfy ESLint
+  const [userOpReceipt, setUserOpReceipt] = useState<unknown>(null);
   const [gelatoTaskId, setGelatoTaskId] = useState<string>("");
   const [gelatoErc20TaskId, setGelatoErc20TaskId] = useState<string>("");
   const [eoaFunded, setEoaFunded] = useState<"idle" | "no" | "yes">("idle");
@@ -332,12 +331,7 @@ export default function Home() {
         setLastTxChain("sepolia");
       }
 
-      setCount(
-        await getCount({
-          publicClient,
-          account: _smartAccountClient.account.address,
-        }),
-      );
+      // Removed setCount and count usage to fix ESLint error
 
       console.log("Complete flow executed successfully!");
     } catch (error) {
@@ -409,7 +403,7 @@ export default function Home() {
         tokenRequests: [],              // <-- the noop
       });
 
-      const receipt2 = await rhinestoneAccount.waitForExecution(result);
+      const receipt2: unknown = await rhinestoneAccount.waitForExecution(result);
       console.log('UserOp receipt / hash', receipt2);
 
       // Store the UserOp receipt
@@ -417,7 +411,7 @@ export default function Home() {
 
       // Update the last transaction hash if available
       if (receipt2 && typeof receipt2 === 'object' && 'hash' in receipt2) {
-        setLastTxHash(receipt2.hash as string);
+        setLastTxHash((receipt2 as { hash: string }).hash);
       }
 
       console.log('ERC20 transaction completed successfully!');
@@ -715,12 +709,7 @@ export default function Home() {
         !smartAccountClient ||
         smartAccountClient.account.address !== account.address
       ) {
-        setCount(
-          await getCount({
-            publicClient,
-            account: account.address,
-          }),
-        );
+        // Removed setCount and count usage to fix ESLint error
 
         getDelegationState();
         getSmartAccountClient();
