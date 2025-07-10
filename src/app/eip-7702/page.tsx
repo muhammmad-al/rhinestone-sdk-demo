@@ -327,6 +327,7 @@ export default function Home() {
       // Extract and store the transaction hash
       if (receipt.receipt && receipt.receipt.transactionHash) {
         setLastTxHash(receipt.receipt.transactionHash);
+        setLastTxChain("sepolia");
       }
 
       setCount(
@@ -429,6 +430,11 @@ export default function Home() {
       return;
     }
 
+    // Clear previous transaction info
+    setLastTxHash("");
+    setLastTxChain("sepolia");
+    setGelatoTaskId("");
+    setGelatoErc20TaskId("");
     setGelatoLoading(true);
 
     try {
@@ -534,6 +540,11 @@ export default function Home() {
       return;
     }
 
+    // Clear previous transaction info
+    setLastTxHash("");
+    setLastTxChain("sepolia");
+    setGelatoTaskId("");
+    setGelatoErc20TaskId("");
     setGelatoErc20Loading(true);
 
     try {
@@ -748,6 +759,18 @@ export default function Home() {
                       <div>
             {account && <>Account {!accountIsDelegated && "not"} delegated</>}
           </div>
+          {lastTxHash && lastTxChain === "sepolia" && (
+            <div>
+              <div>Transaction Hash: <a 
+                href={`https://sepolia.etherscan.io/tx/${lastTxHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                {lastTxHash}
+              </a></div>
+            </div>
+          )}
             {userOpReceipt && (
               <div className="mt-4">
                 <div className="font-bold mb-2">UserOp Receipt:</div>
