@@ -55,6 +55,7 @@ export default function Home() {
   const [amount, setAmount] = useState<string>("");
   const [selectedNetwork, setSelectedNetwork] = useState(421614);
   const [error, setError] = useState<string | null>(null);
+  const [bundleId, setBundleId] = useState<string>("");
 
   // Gelato State
   const [account, setAccount] = useState<any>();
@@ -79,9 +80,23 @@ export default function Home() {
     const savedAccount = localStorage.getItem("rhinestone-account");
     if (savedAccount) {
       const accountData = JSON.parse(savedAccount);
-      setRhinestoneAccount(accountData.account);
       setAccountAddress(accountData.address as `0x${string}`);
       setIsAccountFunded(accountData.funded || false);
+      
+      // Recreate the rhinestone account if we have the private key
+      if (accountData.privateKey) {
+        const rhinestoneApiKey = process.env.NEXT_PUBLIC_RHINESTONE_API_KEY;
+        if (rhinestoneApiKey) {
+          const account = privateKeyToAccount(accountData.privateKey as `0x${string}`);
+          createRhinestoneAccount({
+            owners: {
+              type: 'ecdsa',
+              accounts: [account],
+            },
+            rhinestoneApiKey,
+          }).then(setRhinestoneAccount);
+        }
+      }
     }
   }, []);
 
@@ -154,26 +169,40 @@ export default function Home() {
   }, []);
 
   const handleCreateAccount = useCallback(async () => {
+    console.log("🚀 BUTTON CLICKED - handleCreateAccount called!");
+    
     try {
       setCreateAccountLoading(true);
       setError(null);
+      
+      // Clear any existing account data
+      setRhinestoneAccount(null);
+      setAccountAddress("");
+      setIsAccountFunded(false);
+      setBundleId("");
+      localStorage.removeItem("rhinestone-account");
+      
+      console.log("=== CREATE ACCOUNT DEBUG ===");
       console.log("Creating Rhinestone Omni Account...");
       
       // Validate required environment variables
       const rhinestoneApiKey = process.env.NEXT_PUBLIC_RHINESTONE_API_KEY;
+      console.log("Rhinestone API Key present:", !!rhinestoneApiKey);
+      console.log("Rhinestone API Key length:", rhinestoneApiKey?.length);
+      
       if (!rhinestoneApiKey) {
         throw new Error('NEXT_PUBLIC_RHINESTONE_API_KEY environment variable is required');
       }
 
-      const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
-      if (!EOA_PK) {
-        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
-      }
+      // Generate a new private key each time for a unique account
+      const newPrivateKey = generatePrivateKey();
+      console.log("Generated new private key:", newPrivateKey);
+      
+      const account = privateKeyToAccount(newPrivateKey);
+      console.log("Using new EOA:", account.address);
 
-      const account = privateKeyToAccount(EOA_PK);
-      console.log("Using EOA:", account.address);
-
-      // Create Rhinestone account
+      // Create Rhinestone account - exactly as in docs
+      console.log("Calling createRhinestoneAccount...");
       const _rhinestoneAccount = await createRhinestoneAccount({
         owners: {
           type: 'ecdsa',
@@ -182,30 +211,38 @@ export default function Home() {
         rhinestoneApiKey,
       });
 
+      console.log("Rhinestone account created, getting address...");
       const address = await _rhinestoneAccount.getAddress();
       console.log("Smart account address:", address);
 
       setRhinestoneAccount(_rhinestoneAccount);
       setAccountAddress(address as `0x${string}`);
       
-      // Save to localStorage
+      // Save to localStorage (only save the address and private key, not the account object)
       localStorage.setItem("rhinestone-account", JSON.stringify({
-        account: _rhinestoneAccount,
         address: address,
+        privateKey: newPrivateKey,
         funded: false
       }));
       
       console.log("Rhinestone Omni Account created successfully");
       
     } catch (error) {
+      console.error("=== CREATE ACCOUNT ERROR ===");
       console.error("Error creating Rhinestone account:", error);
+      console.error("Error details:", {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        rhinestoneApiKey: process.env.NEXT_PUBLIC_RHINESTONE_API_KEY ? 'Present' : 'Missing',
+        EOA_PK: process.env.NEXT_PUBLIC_EOA_PK ? 'Present' : 'Missing'
+      });
       setError(`Failed to create account: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setCreateAccountLoading(false);
     }
   }, []);
 
-  const handleFundAccount = useCallback(async () => {
+    const handleFundAccount = useCallback(async () => {
     if (!accountAddress) {
       setError("No account address available");
       return;
@@ -216,12 +253,13 @@ export default function Home() {
       setError(null);
       console.log("Funding account with ETH...");
 
-      const EOA_PK = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
-      if (!EOA_PK) {
-        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required');
+      // Use the funding private key from environment variables
+      const fundingPrivateKey = process.env.NEXT_PUBLIC_EOA_PK as `0x${string}` | undefined;
+      if (!fundingPrivateKey) {
+        throw new Error('NEXT_PUBLIC_EOA_PK environment variable is required for funding');
       }
 
-      const fundingAccount = privateKeyToAccount(EOA_PK);
+      const fundingAccount = privateKeyToAccount(fundingPrivateKey);
       const publicClient = createPublicClient({
         chain: sourceChain,
         transport: http(),
@@ -232,15 +270,29 @@ export default function Home() {
         transport: http(),
       });
 
-      console.log("Sending 0.001 ETH to smart account...");
+      console.log(`Funding smart account (${accountAddress}) with 0.001 ETH from funding account...`);
+      console.log(`Funding account address: ${fundingAccount.address}`);
+
+      // Check funding account balance first
+      const fundingBalance = await publicClient.getBalance({
+        address: fundingAccount.address,
+      });
+      console.log(`Funding account balance: ${fundingBalance} wei`);
+
+      if (fundingBalance < parseEther('0.002')) {
+        throw new Error(`Insufficient balance in funding account. Need at least 0.002 ETH, have ${Number(fundingBalance) / 10**18} ETH`);
+      }
+
       const txHash = await fundingClient.sendTransaction({
         to: accountAddress as `0x${string}`,
         value: parseEther('0.001'),
       });
 
-      console.log("Funding transaction hash:", txHash);
+      console.log('Funding transaction sent! Hash:', txHash);
+      console.log('Waiting for funding confirmation...');
+      
       await publicClient.waitForTransactionReceipt({ hash: txHash });
-      console.log("Funding transaction confirmed");
+      console.log('Smart account funded successfully!');
 
       setIsAccountFunded(true);
       
@@ -304,14 +356,14 @@ export default function Home() {
       console.log("Transfer amount:", amount, "USDC");
       console.log("Recipient:", targetAddress);
 
-      // Get USDC address on target chain
+      // Get USDC address on target chain - exactly as in docs
       const usdcTarget = getTokenAddress('USDC', targetChain.id);
       const usdcAmount = BigInt(Number(amount) * 10 ** 6);
 
       console.log("USDC target address:", usdcTarget);
       console.log("USDC amount (wei):", usdcAmount.toString());
 
-      // Send the cross-chain transaction
+      // Send the cross-chain transaction - exactly as in docs
       console.log("Sending cross-chain transaction...");
       const transaction = await rhinestoneAccount.sendTransaction({
         sourceChain,
@@ -336,27 +388,45 @@ export default function Home() {
       });
 
       console.log('Transaction sent:', transaction);
+      
+      // Extract and display bundle ID
+      console.log('Full transaction object:', transaction);
+      if (transaction && typeof transaction === 'object') {
+        // Try different possible properties for bundle ID
+        const bundleIdValue = (transaction as any).bundleId || (transaction as any).id || (transaction as any).bundle_id;
+        if (bundleIdValue) {
+          setBundleId(bundleIdValue);
+          console.log('Bundle ID found:', bundleIdValue);
+        } else {
+          console.log('No bundle ID found in transaction object');
+        }
+      }
 
-      // Wait for execution
-      const transactionResult = await rhinestoneAccount.waitForExecution(transaction);
-      console.log('Transaction result:', transactionResult);
+      // Stop loading spinner once bundle is sent
+      setTransferLoading(false);
+      console.log("Bundle sent successfully!");
 
       setAmount("");
       setTargetAddress("");
       
-      // Wait a moment for the transaction to be processed, then update balance
-      setTimeout(() => {
-        getBalance();
-      }, 2000);
+      // Wait for execution in background (don't block UI)
+      rhinestoneAccount.waitForExecution(transaction).then((transactionResult) => {
+        console.log('Transaction result:', transactionResult);
+        console.log("Cross-chain transfer completed successfully!");
+        
+        // Update balance after execution completes
+        setTimeout(() => {
+          getBalance();
+        }, 2000);
+      }).catch((error) => {
+        console.error("Error waiting for execution:", error);
+      });
 
-      console.log("Cross-chain transfer completed successfully!");
-
-    } catch (error) {
+          } catch (error) {
       console.error("Error in cross-chain transfer:", error);
       setError(`Transfer failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setTransferLoading(false);
     }
-
-    setTransferLoading(false);
   }, [
     rhinestoneAccount,
     amount,
@@ -691,6 +761,14 @@ export default function Home() {
           </div>
           
           <div className="font-[family-name:var(--font-geist-mono)] text-sm flex-1 break-words">
+            <div>
+              {accountAddress && (
+                <div className="mb-2">
+                  <div className="text-xs text-gray-500">Smart Account Address:</div>
+                  <div className="text-xs break-all">{accountAddress}</div>
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {accountAddress && (
                 <>
@@ -714,6 +792,12 @@ export default function Home() {
                   <div className="text-xs text-gray-500 mt-1">
                     You can now send USDC to this address
                   </div>
+                </div>
+              )}
+              {bundleId && (
+                <div className="mt-2">
+                  <div className="text-xs text-gray-500">Bundle ID:</div>
+                  <div className="text-xs break-all text-blue-600">{bundleId}</div>
                 </div>
               )}
             </div>
@@ -754,7 +838,7 @@ export default function Home() {
             <Button
               buttonText="Create Account"
               onClick={handleCreateAccount}
-              disabled={!!rhinestoneAccount}
+              disabled={false}
               isLoading={createAccountLoading}
             />
             <Button
