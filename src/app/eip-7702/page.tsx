@@ -39,7 +39,7 @@ import {
 import { gelato } from "@gelatonetwork/smartwallet/accounts";
 
 const sourceChain = baseSepolia;
-const targetChains = [arbitrumSepolia, baseSepolia, optimismSepolia, sepolia];
+const targetChain = sepolia; // Only Ethereum Sepolia
 
 export default function Home() {
   // Rhinestone Omni Account State
@@ -53,9 +53,10 @@ export default function Home() {
   const [ethBalance, setEthBalance] = useState<number>(0);
   const [targetAddress, setTargetAddress] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
-  const [selectedNetwork, setSelectedNetwork] = useState(421614);
   const [error, setError] = useState<string | null>(null);
   const [bundleId, setBundleId] = useState<string>("");
+  const [claimTxHash, setClaimTxHash] = useState<string>("");
+  const [fillTxHash, setFillTxHash] = useState<string>("");
 
   // Gelato State
   const [account, setAccount] = useState<any>();
@@ -180,6 +181,8 @@ export default function Home() {
       setAccountAddress("");
       setIsAccountFunded(false);
       setBundleId("");
+      setClaimTxHash("");
+      setFillTxHash("");
       localStorage.removeItem("rhinestone-account");
       
       console.log("=== CREATE ACCOUNT DEBUG ===");
@@ -343,16 +346,7 @@ export default function Home() {
     try {
       console.log("Starting cross-chain transfer...");
       
-      // Get the target chain
-      const targetChain = targetChains.find(
-        (chain) => chain.id === selectedNetwork,
-      );
-      
-      if (!targetChain) {
-        throw new Error("Invalid target chain");
-      }
-
-      console.log("Target chain:", targetChain.name);
+      console.log("Target chain: Ethereum Sepolia");
       console.log("Transfer amount:", amount, "USDC");
       console.log("Recipient:", targetAddress);
 
@@ -402,16 +396,30 @@ export default function Home() {
         }
       }
 
-      // Stop loading spinner once bundle is sent
-      setTransferLoading(false);
-      console.log("Bundle sent successfully!");
-
       setAmount("");
       setTargetAddress("");
       
       // Wait for execution in background (don't block UI)
-      rhinestoneAccount.waitForExecution(transaction).then((transactionResult: any) => {
+      rhinestoneAccount.waitForExecution(transaction, false).then((transactionResult: any) => {
         console.log('Transaction result:', transactionResult);
+        console.log("Cross-chain transfer completed successfully!");
+        
+        // Log transaction hashes
+        console.log('Full transaction result structure:', transactionResult);
+        
+        if (transactionResult.claims && transactionResult.claims.length > 0) {
+          console.log('Claim Transaction Hash:', transactionResult.claims[0].claimTransactionHash);
+          setClaimTxHash(transactionResult.claims[0].claimTransactionHash);
+        }
+        if (transactionResult.fillTransactionHash) {
+          console.log('Fill Transaction Hash:', transactionResult.fillTransactionHash);
+          setFillTxHash(transactionResult.fillTransactionHash);
+        } else {
+          console.log('No fillTransactionHash found in result');
+        }
+        
+        // Stop loading spinner once transaction hashes are set
+        setTransferLoading(false);
         console.log("Cross-chain transfer completed successfully!");
         
         // Update balance after execution completes
@@ -433,7 +441,6 @@ export default function Home() {
     targetAddress,
     usdcBalance,
     ethBalance,
-    selectedNetwork,
   ]);
 
   // Gelato Functions
@@ -751,12 +758,12 @@ export default function Home() {
               <li className="text-gray-400">
                 Fund account with ETH (0.001 ETH recommended)
               </li>
-              <li className="text-gray-400">
-                Fund account with USDC on Base Sepolia testnet
-              </li>
-              <li className="text-gray-400">
-                Execute cross-chain transfer to any supported testnet
-              </li>
+                          <li className="text-gray-400">
+              Fund account with USDC on Base Sepolia testnet
+            </li>
+            <li className="text-gray-400">
+              Execute cross-chain transfer to Ethereum Sepolia
+            </li>
             </ol>
           </div>
           
@@ -796,26 +803,43 @@ export default function Home() {
               {bundleId && (
                 <div className="mt-2">
                   <div className="text-xs text-gray-500">Bundle ID:</div>
-                  <div className="text-xs break-all text-blue-600">{bundleId}</div>
+                  <div className="text-xs break-all">{bundleId}</div>
+                </div>
+              )}
+              {claimTxHash && (
+                <div className="mt-2">
+                  <div className="text-xs text-gray-500">Claim TX Hash:</div>
+                  <div className="text-xs break-all">
+                    <a 
+                      href={`https://sepolia.basescan.org/tx/${claimTxHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {claimTxHash}
+                    </a>
+                  </div>
+                </div>
+              )}
+              {fillTxHash && (
+                <div className="mt-2">
+                  <div className="text-xs text-gray-500">Fill TX Hash:</div>
+                  <div className="text-xs break-all">
+                    <a 
+                      href={`https://sepolia.etherscan.io/tx/${fillTxHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      {fillTxHash}
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
             </div>
             
           <div className="flex gap-4 justify-center items-center flex-col sm:flex-row">
-            <select
-              id="network-select"
-              value={selectedNetwork}
-              onChange={(e) => setSelectedNetwork(Number(e.target.value))}
-              className="block w-full px-4 py-1 bg-white text-black border border-gray-300 rounded-2xl"
-            >
-              {targetChains.map((chain) => (
-                <option key={chain.id} value={chain.id}>
-                  {chain.name}
-                </option>
-              ))}
-            </select>
-
             <input
               className="bg-white rounded-2xl text-black px-4 py-1"
               placeholder="Target address"
@@ -831,7 +855,7 @@ export default function Home() {
               type="number"
               id="amount"
             />
-              </div>
+          </div>
 
           <div className="flex gap-4 items-center flex-col sm:flex-row">
             <Button
