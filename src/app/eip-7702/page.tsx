@@ -878,7 +878,7 @@ export default function Home() {
           </div>
           
           {/* Workflow Steps */}
-          <div className="text-sm -mt-4">
+          <div className="text-sm -mt-1">
             <h3 className="font-bold mb-2">Workflow Steps:</h3>
             <ol className="list-decimal list-inside space-y-1 text-xs">
               <li className="text-gray-400">
