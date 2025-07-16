@@ -197,7 +197,7 @@ export default function Home() {
       // Generate a new private key each time for a unique account
       const newPrivateKey = generatePrivateKey();
       console.log("Generated new private key:", newPrivateKey);
-      
+
       const account = privateKeyToAccount(newPrivateKey);
       console.log("Using new EOA:", account.address);
 
@@ -209,8 +209,8 @@ export default function Home() {
           accounts: [account],
         },
         rhinestoneApiKey,
-      });
-
+    });
+    
       console.log("Rhinestone account created, getting address...");
       const address = await _rhinestoneAccount.getAddress();
       console.log("Smart account address:", address);
@@ -261,14 +261,14 @@ export default function Home() {
 
       const fundingAccount = privateKeyToAccount(fundingPrivateKey);
       const publicClient = createPublicClient({
-        chain: sourceChain,
+      chain: sourceChain,
         transport: http(),
       });
       const fundingClient = createWalletClient({
         account: fundingAccount,
-        chain: sourceChain,
-        transport: http(),
-      });
+      chain: sourceChain,
+      transport: http(),
+    });
 
       console.log(`Funding smart account (${accountAddress}) with 0.001 ETH from funding account...`);
       console.log(`Funding account address: ${fundingAccount.address}`);
@@ -388,7 +388,7 @@ export default function Home() {
       });
 
       console.log('Transaction sent:', transaction);
-      
+
       // Extract and display bundle ID
       console.log('Full transaction object:', transaction);
       if (transaction && typeof transaction === 'object') {
@@ -410,22 +410,22 @@ export default function Home() {
       setTargetAddress("");
       
       // Wait for execution in background (don't block UI)
-      rhinestoneAccount.waitForExecution(transaction).then((transactionResult) => {
+      rhinestoneAccount.waitForExecution(transaction).then((transactionResult: any) => {
         console.log('Transaction result:', transactionResult);
         console.log("Cross-chain transfer completed successfully!");
         
         // Update balance after execution completes
-        setTimeout(() => {
-          getBalance();
-        }, 2000);
-      }).catch((error) => {
+      setTimeout(() => {
+        getBalance();
+      }, 2000);
+      }).catch((error: any) => {
         console.error("Error waiting for execution:", error);
       });
 
           } catch (error) {
       console.error("Error in cross-chain transfer:", error);
       setError(`Transfer failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setTransferLoading(false);
+    setTransferLoading(false);
     }
   }, [
     rhinestoneAccount,
@@ -728,7 +728,7 @@ export default function Home() {
     <div className="min-h-screen p-8 pb-20 font-[family-name:var(--font-geist-sans)] flex flex-col items-center justify-center">
       <div className="flex flex-col lg:flex-row max-w-6xl w-full">
         {/* RHINESTONE SECTION - Left Side */}
-        <div className="flex-1 flex flex-col gap-8 pr-8 h-96">
+        <div className="flex-1 flex flex-col gap-8 pr-4 h-96">
           <div className="flex flex-row items-center align-center">
             <Image
               className="dark:invert"
@@ -738,20 +738,20 @@ export default function Home() {
               height={38}
               priority
             />{" "}
-            <span className="text-lg font-bold">x Omni Account Transfers (Testnet)</span>
+            <span className="text-lg font-bold">x Omni Account Transfers</span>
           </div>
           
           {/* Workflow Steps */}
-          <div className="text-sm">
+          <div className="text-sm -mt-5">
             <h3 className="font-bold mb-2">Workflow Steps:</h3>
             <ol className="list-decimal list-inside space-y-1 text-xs">
-              <li className={rhinestoneAccount ? "text-gray-600" : "text-gray-400"}>
+              <li className="text-gray-400">
                 Create Rhinestone Omni Account
               </li>
-              <li className={isAccountFunded ? "text-gray-600" : "text-gray-400"}>
+              <li className="text-gray-400">
                 Fund account with ETH (0.001 ETH recommended)
               </li>
-              <li className={usdcBalance > 0 ? "text-gray-600" : "text-gray-400"}>
+              <li className="text-gray-400">
                 Fund account with USDC on Base Sepolia testnet
               </li>
               <li className="text-gray-400">
@@ -760,12 +760,11 @@ export default function Home() {
             </ol>
           </div>
           
-          <div className="font-[family-name:var(--font-geist-mono)] text-sm flex-1 break-words">
+          <div className="font-[family-name:var(--font-geist-mono)] text-sm flex-1 break-words mt-2">
             <div>
               {accountAddress && (
-                <div className="mb-2">
-                  <div className="text-xs text-gray-500">Smart Account Address:</div>
-                  <div className="text-xs break-all">{accountAddress}</div>
+                <div className="mt-4 mb-0">
+                  <div>Smart Account Address: <span className="break-all">{accountAddress}</span></div>
                 </div>
               )}
             </div>
@@ -792,7 +791,7 @@ export default function Home() {
                   <div className="text-xs text-gray-500 mt-1">
                     You can now send USDC to this address
                   </div>
-                </div>
+                  </div>
               )}
               {bundleId && (
                 <div className="mt-2">
@@ -866,7 +865,7 @@ export default function Home() {
         <div className="w-px bg-gray-300 dark:bg-gray-700 mx-4 flex-shrink-0 self-stretch"></div>
 
         {/* GELATO SECTION - Right Side */}
-        <div className="flex-1 flex flex-col gap-8 pl-8 h-96">
+        <div className="flex-1 flex flex-col gap-8 pl-4 h-96">
           <div className="flex flex-row items-center align-center">
             <Image
               src="/gelato.svg"
@@ -875,17 +874,17 @@ export default function Home() {
               height={38}
               priority
             />
-            <span className="text-2xl font-bold ml-2">Gelato Smart Wallet SDK (Testnet)</span>
+            <span className="text-2xl font-bold ml-2">Gelato Smart Wallet SDK</span>
           </div>
           
           {/* Workflow Steps */}
-          <div className="text-sm">
+          <div className="text-sm -mt-4">
             <h3 className="font-bold mb-2">Workflow Steps:</h3>
             <ol className="list-decimal list-inside space-y-1 text-xs">
-              <li className="text-green-500">
+              <li className="text-gray-400">
                 Create smart account (automatic)
               </li>
-              <li className="text-green-500">
+              <li className="text-gray-400">
                 Choose gas payment method:
               </li>
               <li className="text-gray-400 ml-4">
@@ -984,25 +983,19 @@ export default function Home() {
           </div>
           
           {/* TRANSACTION BUTTONS - Moved to Gelato section */}
-          <div className="flex-1 flex flex-col justify-end">
-            <div className="flex gap-4 items-center flex-col sm:flex-row">
-              {/* Sponsored Transaction Button */}
-          <div className="w-64">
+          <div className="flex gap-4 items-center flex-col sm:flex-row mt-14 mb-14">
+            {/* Sponsored Transaction Button */}
             <Button
                   buttonText="Basic sponsored transactions"
                   onClick={handleSponsoredTransaction}
                   isLoading={sponsoredLoading}
             />
-          </div>
               {/* ERC20 Transaction Button */}
-          <div className="w-64">
             <Button
                   buttonText="ERC-20 gas payments"
                   onClick={handleErc20Transaction}
                   isLoading={erc20Loading}
                 />
-              </div>
-            </div>
           </div>
         </div>
       </div>
